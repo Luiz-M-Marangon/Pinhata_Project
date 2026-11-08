@@ -1,0 +1,1 @@
+{"name": "text-to-sql-firebird-raiz", "version": "0.2.0", "private": true, "description": "Atalho: a ferramenta fica em versão1/. Este arquivo faz npm start e npm install funcionarem tambem a partir da raiz do projeto.", "scripts": {"postinstall": "npm install --prefix versão1", "start": "npm start --prefix versão1"}}

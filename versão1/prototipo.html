@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Text-to-SQL</title>
+<style>
+:root{--bg:#0f172a;--panel:#1e293b;--line:#334155;--text:#e2e8f0;--mute:#94a3b8;--dim:#64748b;--brand:#3b82f6;--brand2:#2563eb;--ok:#34d399;--warn:#fbbf24;--bad:#fb7185;--code:#0d1117}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;overflow:hidden}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+aside{width:320px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;height:100%;transition:transform .25s}
+.side-head,header{height:56px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--line);flex-shrink:0}
+.side-head{font-weight:700}
+.side-body{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:22px}
+h3{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--mute);letter-spacing:.04em}
+label{display:block;font-size:12px;color:var(--mute);margin-bottom:4px}
+input[type=text],textarea{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;transition:border-color .15s}
+input[type=text]:focus,textarea:focus{border-color:var(--brand)}
+textarea{resize:vertical}
+#schema{font:11.5px/1.45 ui-monospace,Consolas,monospace;color:var(--ok)}
+.row{display:flex;gap:8px}
+.row>input{flex:1;min-width:0}
+.field+.field{margin-top:10px}
+.btn{border:1px solid var(--line);background:transparent;border-radius:6px;padding:6px 12px;color:var(--mute);transition:background .15s,color .15s}
+.btn:hover{background:var(--bg);color:var(--text)}
+.link{background:none;border:0;color:var(--brand);padding:0;font-size:12px;margin-top:6px}
+.link:hover{text-decoration:underline}
+.hint{font-size:11.5px;color:var(--dim);margin:0 0 8px}
+#conn{font-size:12px;margin-top:8px;min-height:18px}
+#history{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+#history button{width:100%;text-align:left;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#history button:hover{color:var(--text);border-color:var(--brand)}
+main{flex:1;min-width:0;display:flex;flex-direction:column;height:100%}
+header{justify-content:flex-start}
+#menu{display:none;background:none;border:0;font-size:20px;color:var(--mute);padding:4px 8px}
+header h1{font-size:17px;margin:0}
+header h1 span{font-weight:400;color:var(--mute)}
+.scroll{flex:1;overflow-y:auto;padding:24px 16px;display:flex;justify-content:center}
+.col{width:100%;max-width:760px;display:flex;flex-direction:column;gap:20px}
+.note{background:rgba(30,58,138,.25);border:1px solid rgba(59,130,246,.3);color:#bfdbfe;border-radius:8px;padding:10px 14px;font-size:12.5px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);font-weight:600;font-size:13px}
+.card-body{padding:14px}
+.actions{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px}
+.actions small{color:var(--dim)}
+.primary{background:var(--brand);border:0;color:#fff;font-weight:600;border-radius:8px;padding:8px 22px;transition:background .15s}
+.primary:hover{background:var(--brand2)}
+.stop{background:transparent;border:1px solid var(--bad);color:var(--bad);font-weight:600;border-radius:8px;padding:8px 22px}
+[hidden]{display:none!important}
+.badge{font-size:11px;font-weight:600;border-radius:5px;padding:2px 8px;border:1px solid;white-space:nowrap}
+.b-idle{color:var(--mute);border-color:var(--line)}
+.b-run{color:var(--brand);border-color:var(--brand)}
+.b-ok{color:var(--ok);border-color:var(--ok)}
+.b-warn{color:var(--warn);border-color:var(--warn)}
+.b-bad{color:var(--bad);border-color:var(--bad)}
+.code{background:var(--code);padding:14px;min-height:140px}
+pre{margin:0;overflow-x:auto}
+code{font:13px/1.55 ui-monospace,Consolas,monospace;color:#93c5fd;white-space:pre}
+#checks{list-style:none;margin:0;padding:10px 14px;border-top:1px solid var(--line);font-size:12.5px;display:flex;flex-direction:column;gap:2px}
+#checks:empty{display:none}
+#checks .ok{color:var(--ok)}#checks .warn{color:var(--warn)}#checks .bad{color:var(--bad)}
+#toasts{position:fixed;bottom:20px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:50}
+.toast{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-size:13px;max-width:340px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast.success{border-color:var(--ok)}.toast.error{border-color:var(--bad)}
+#overlay{display:none}
+@media(max-width:767px){
+ aside{position:fixed;z-index:40;transform:translateX(-100%)}
+ aside.open{transform:none}
+ #overlay.open{display:block;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:30}
+ #menu{display:block}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<aside id="side" aria-label="Configurações">
+ <div class="side-head">Configurações</div>
+ <div class="side-body">
+  <section>
+   <h3>Modelo</h3>
+   <div class="field">
+    <label for="url">URL do Ollama</label>
+    <input type="text" id="url" value="http://localhost:11434" spellcheck="false">
+   </div>
+   <div class="field">
+    <label for="model">Nome do modelo</label>
+    <div class="row">
+     <input type="text" id="model" value="sqlcoder:latest" list="models" spellcheck="false">
+     <datalist id="models"></datalist>
+     <button class="btn" id="test" type="button">Testar</button>
+    </div>
+   </div>
+   <div id="conn" role="status"></div>
+  </section>
+
+  <section>
+   <h3>Esquema do banco (DDL)</h3>
+   <p class="hint">Cole os CREATE TABLE do PostgreSQL. Quanto mais fiel ao banco real, melhor o SQL.</p>
+   <textarea id="schema" rows="14" spellcheck="false"></textarea>
+   <button class="link" id="reset" type="button">Restaurar esquema padrão</button>
+  </section>
+
+  <section>
+   <h3>Perguntas recentes</h3>
+   <ul id="history"></ul>
+   <button class="link" id="clear-hist" type="button">Limpar histórico</button>
+  </section>
+ </div>
+</aside>
+<div id="overlay"></div>
+
+<main>
+ <header>
+  <button id="menu" type="button" aria-label="Abrir configurações">☰</button>
+  <h1>Text-to-SQL <span>protótipo</span></h1>
+ </header>
+
+ <div class="scroll"><div class="col">
+  <div class="note">Descreva em português o que você precisa. O modelo gera uma consulta com base no esquema ao lado. Revise todo SQL antes de executar.</div>
+
+  <div class="card">
+   <div class="card-head"><label for="q" style="margin:0;color:inherit;font-size:inherit">Qual é a sua pergunta?</label></div>
+   <div class="card-body">
+    <textarea id="q" rows="4" placeholder="Ex.: Quais clientes se cadastraram este ano e quanto cada um já comprou?"></textarea>
+    <div class="actions">
+     <small>Ctrl + Enter para gerar</small>
+     <div>
+      <button class="primary" id="go" type="button">Gerar SQL</button>
+      <button class="stop" id="stop" type="button" hidden>Parar</button>
+     </div>
+    </div>
+   </div>
+  </div>
+
+  <div class="card">
+   <div class="card-head">
+    <span>Consulta SQL</span>
+    <span class="row" style="align-items:center">
+     <span class="badge b-idle" id="badge">Aguardando</span>
+     <button class="btn" id="copy" type="button">Copiar</button>
+    </span>
+   </div>
+   <div class="code"><pre><code id="out">-- O SQL gerado aparecerá aqui.</code></pre></div>
+   <ul id="checks" aria-live="polite"></ul>
+  </div>
+ </div></div>
+</main>
+
+<div id="toasts" role="status"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const DEFAULT_SCHEMA = `CREATE TABLE clientes (
+    id_cliente SERIAL PRIMARY KEY,
+    nome VARCHAR(100),
+    segmento VARCHAR(50),
+    data_cadastro DATE
+);
+
+CREATE TABLE vendas (
+    id_venda SERIAL PRIMARY KEY,
+    id_cliente INT REFERENCES clientes(id_cliente),
+    valor NUMERIC,
+    data_venda TIMESTAMP
+);`;
+
+let sql = "", controller = null;
+
+/* ---------- armazenamento local ---------- */
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); }catch{ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} }
+};
+
+/* ---------- interface ---------- */
+function toast(msg, type){
+  const t = document.createElement("div");
+  t.className = "toast " + (type || "");
+  t.textContent = msg;
+  $("toasts").appendChild(t);
+  setTimeout(() => t.remove(), 3800);
+}
+function setSide(open){
+  $("side").classList.toggle("open", open);
+  $("overlay").classList.toggle("open", open);
+}
+function setBadge(kind, text){
+  $("badge").className = "badge b-" + kind;
+  $("badge").textContent = text;
+}
+function setBusy(busy){
+  $("go").hidden = busy;
+  $("stop").hidden = !busy;
+}
+
+/* ---------- prompt (formato recomendado para o SQLCoder) ---------- */
+function buildPrompt(question, schema){
+  const hoje = new Date().toISOString().slice(0, 10);
+  return `### Task
+Generate a PostgreSQL SELECT query to answer [QUESTION]${question}[/QUESTION]
+Today's date is ${hoje}. Use only the tables and columns in the schema. Return a single query.
+
+### Database Schema
+The query will run on a database with the following schema:
+${schema}
+
+### Answer
+Given the database schema, here is the SQL query that answers [QUESTION]${question}[/QUESTION]
+[SQL]
+`;
+}
+
+/* ---------- limpeza e validação ---------- */
+function cleanSQL(raw){
+  let s = raw.replace(/```sql/gi, "").replace(/```/g, "");
+  s = s.split("[/SQL]")[0].trim();
+  return s;
+}
+function tablesFromSchema(schema){
+  const re = /create\s+table\s+(?:if\s+not\s+exists\s+)?"?([\w.]+)"?/gi;
+  const names = new Set(); let m;
+  while ((m = re.exec(schema))) names.add(m[1].split(".").pop().toLowerCase());
+  return names;
+}
+function validate(query, schema){
+  const checks = []; let level = "ok";
+  const bump = l => { if (l === "bad" || (l === "warn" && level === "ok")) level = l; };
+  const stripped = query
+    .replace(/--.*$/gm, " ").replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/'(?:[^']|'')*'/g, "''").trim();
+
+  if (!stripped){ return { level: "bad", checks: [["bad", "O modelo não retornou nenhuma consulta."]] }; }
+
+  if (/^(select|with)\b/i.test(stripped)) checks.push(["ok", "Consulta de leitura (SELECT/WITH)."]);
+  else { checks.push(["bad", "Não começa com SELECT ou WITH."]); bump("bad"); }
+
+  const forbidden = stripped.match(/\b(insert|update|delete|drop|alter|truncate|create|grant|revoke|copy|merge|call|do)\b/i);
+  if (forbidden){ checks.push(["bad", `Comando de escrita ou administração detectado: ${forbidden[1].toUpperCase()}.`]); bump("bad"); }
+
+  const semis = stripped.replace(/;\s*$/, "").includes(";");
+  if (semis){ checks.push(["bad", "Mais de uma instrução na mesma consulta."]); bump("bad"); }
+
+  const open = (stripped.match(/\(/g) || []).length, close = (stripped.match(/\)/g) || []).length;
+  if (open !== close){ checks.push(["warn", "Parênteses desbalanceados."]); bump("warn"); }
+
+  const known = tablesFromSchema(schema);
+  if (known.size){
+    const cte = new Set([...stripped.matchAll(/\b(\w+)\s+as\s*\(/gi)].map(m => m[1].toLowerCase()));
+    const used = [...stripped.matchAll(/\b(?:from|join)\s+"?([\w.]+)"?/gi)].map(m => m[1].split(".").pop().toLowerCase());
+    const unknown = [...new Set(used)].filter(t => !known.has(t) && !cte.has(t));
+    if (unknown.length){ checks.push(["warn", "Tabela fora do esquema: " + unknown.join(", ") + "."]); bump("warn"); }
+    else if (used.length) checks.push(["ok", "Todas as tabelas existem no esquema."]);
+  }
+  return { level, checks };
+}
+function showResult(){
+  const r = validate(sql, $("schema").value);
+  $("checks").innerHTML = "";
+  r.checks.forEach(([k, t]) => {
+    const li = document.createElement("li");
+    li.className = k;
+    li.textContent = (k === "ok" ? "✓ " : k === "warn" ? "! " : "✕ ") + t;
+    $("checks").appendChild(li);
+  });
+  if (r.level === "ok") setBadge("ok", "Verificação básica ok");
+  else if (r.level === "warn") setBadge("warn", "Revisar");
+  else setBadge("bad", "Bloqueado");
+  return r;
+}
+
+/* ---------- Ollama ---------- */
+const baseUrl = () => $("url").value.trim().replace(/\/+$/, "");
+
+function explainError(err){
+  if (err.name === "AbortError") return "Geração interrompida.";
+  if (err instanceof TypeError)
+    return "Não foi possível conectar ao Ollama. Confirme que ele está rodando e, se abriu este arquivo direto no navegador, inicie-o com OLLAMA_ORIGINS=* (ex.: OLLAMA_ORIGINS=* ollama serve).";
+  return err.message;
+}
+
+async function testConnection(){
+  const el = $("conn");
+  el.style.color = "var(--mute)"; el.textContent = "Testando…";
+  try{
+    const res = await fetch(baseUrl() + "/api/tags");
+    if (!res.ok) throw new Error("O servidor respondeu com erro " + res.status + ".");
+    const data = await res.json();
+    const names = (data.models || []).map(m => m.name);
+    $("models").innerHTML = names.map(n => `<option value="${n}">`).join("");
+    const has = names.includes($("model").value.trim());
+    el.style.color = has ? "var(--ok)" : "var(--warn)";
+    el.textContent = has
+      ? `Conectado. ${names.length} modelo(s) disponível(is).`
+      : `Conectado, mas "${$("model").value.trim()}" não está instalado. Rode: ollama pull sqlcoder`;
+  }catch(err){
+    el.style.color = "var(--bad)"; el.textContent = explainError(err);
+  }
+}
+
+async function generate(){
+  const question = $("q").value.trim();
+  const schema = $("schema").value.trim();
+  if (!question){ toast("Digite uma pergunta antes de gerar.", "error"); return; }
+  if (!schema){ toast("Cole o esquema do banco no menu lateral.", "error"); return; }
+
+  controller = new AbortController();
+  setBusy(true); setBadge("run", "Gerando…");
+  $("checks").innerHTML = ""; $("out").textContent = ""; sql = "";
+  let raw = "";
+
+  try{
+    const res = await fetch(baseUrl() + "/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: $("model").value.trim(),
+        prompt: buildPrompt(question, schema),
+        raw: true,
+        stream: true,
+        options: { temperature: 0, num_predict: 600, stop: ["[/SQL]", "```"] }
+      })
+    });
+    if (!res.ok){
+      let detail = ""; try{ detail = (await res.json()).error || ""; }catch{}
+      if (res.status === 404) throw new Error(`Modelo "${$("model").value.trim()}" não encontrado. Rode: ollama pull sqlcoder`);
+      throw new Error(detail || "Erro " + res.status + " do Ollama.");
+    }
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    for(;;){
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n"); buf = lines.pop();
+      for (const line of lines){
+        if (!line.trim()) continue;
+        const msg = JSON.parse(line);
+        if (msg.error) throw new Error(msg.error);
+        raw += msg.response || "";
+        sql = cleanSQL(raw);
+        $("out").textContent = sql;
+      }
+    }
+    sql = cleanSQL(raw);
+    $("out").textContent = sql || "-- Sem resultado.";
+    showResult();
+    if (sql) saveHistory(question, sql);
+  }catch(err){
+    if (err.name === "AbortError"){
+      sql = cleanSQL(raw);
+      $("out").textContent = sql || "-- Geração interrompida.";
+      setBadge("idle", "Interrompido");
+    } else {
+      $("out").textContent = "-- Erro: " + explainError(err);
+      setBadge("bad", "Erro");
+      toast(explainError(err), "error");
+    }
+  }finally{
+    setBusy(false); controller = null;
+  }
+}
+
+/* ---------- histórico ---------- */
+function saveHistory(q, s){
+  const list = store.get("t2s.history", []).filter(h => h.q !== q);
+  list.unshift({ q, s });
+  store.set("t2s.history", list.slice(0, 10));
+  renderHistory();
+}
+function renderHistory(){
+  const ul = $("history"); ul.innerHTML = "";
+  const list = store.get("t2s.history", []);
+  if (!list.length){ ul.innerHTML = '<li class="hint">Nenhuma pergunta ainda.</li>'; return; }
+  list.forEach(h => {
+    const li = document.createElement("li"), b = document.createElement("button");
+    b.type = "button"; b.textContent = h.q; b.title = h.q;
+    b.onclick = () => {
+      $("q").value = h.q; sql = h.s; $("out").textContent = sql; showResult(); setSide(false);
+    };
+    li.appendChild(b); ul.appendChild(li);
+  });
+}
+
+/* ---------- copiar ---------- */
+async function copySQL(){
+  if (!sql){ toast("Não há SQL para copiar.", "error"); return; }
+  try{ await navigator.clipboard.writeText(sql); }
+  catch{
+    const t = document.createElement("textarea");
+    t.value = sql; document.body.appendChild(t); t.select();
+    document.execCommand("copy"); t.remove();
+  }
+  toast("SQL copiado.", "success");
+}
+
+/* ---------- inicialização ---------- */
+$("url").value = store.get("t2s.url", $("url").value);
+$("model").value = store.get("t2s.model", $("model").value);
+$("schema").value = store.get("t2s.schema", DEFAULT_SCHEMA);
+$("url").addEventListener("change", () => store.set("t2s.url", $("url").value.trim()));
+$("model").addEventListener("change", () => store.set("t2s.model", $("model").value.trim()));
+$("schema").addEventListener("input", () => store.set("t2s.schema", $("schema").value));
+$("reset").onclick = () => { $("schema").value = DEFAULT_SCHEMA; store.set("t2s.schema", DEFAULT_SCHEMA); toast("Esquema padrão restaurado."); };
+$("clear-hist").onclick = () => { store.set("t2s.history", []); renderHistory(); };
+$("test").onclick = testConnection;
+$("go").onclick = generate;
+$("stop").onclick = () => controller && controller.abort();
+$("copy").onclick = copySQL;
+$("menu").onclick = () => setSide(true);
+$("overlay").onclick = () => setSide(false);
+$("q").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) generate(); });
+renderHistory();
+</script>
+</body>
+</html>

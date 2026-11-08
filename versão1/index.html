@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Text-to-SQL para Firebird</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Menu lateral: navegação entre as duas telas + estado da conexão -->
+<aside id="side" aria-label="Menu">
+ <div class="side-head">
+  <span>Text-to-SQL</span>
+  <button class="icon" id="close-side" type="button" aria-label="Fechar menu">✕</button>
+ </div>
+ <nav>
+  <button class="nav on" type="button" data-view="conn">Conexão e contexto</button>
+  <button class="nav" type="button" data-view="ask" id="nav-ask" disabled>Perguntar</button>
+ </nav>
+ <p id="dbstate">Desconectado. Conecte um Firebird para liberar as perguntas.</p>
+</aside>
+<div id="overlay"></div>
+
+<main>
+ <header>
+  <button class="icon" id="menu" type="button" aria-label="Abrir menu" aria-expanded="true" aria-controls="side">☰</button>
+  <h1>Text-to-SQL <span>Firebird 2.5</span></h1>
+ </header>
+
+ <div class="scroll"><div class="col">
+
+  <!-- Tela 1: conexão com o banco e contexto descritivo do esquema -->
+  <section id="view-conn" class="view">
+   <div class="card">
+    <div class="card-head">Conexão com o Firebird</div>
+    <div class="card-body">
+     <div class="grid">
+      <div><label for="host">Servidor</label><input type="text" id="host" value="localhost" spellcheck="false"></div>
+      <div><label for="port">Porta</label><input type="text" id="port" value="3050" inputmode="numeric"></div>
+      <div><label for="database">Caminho do banco (.fdb)</label><input type="text" id="database" placeholder="C:\dados\banco.fdb" spellcheck="false"></div>
+      <div><label for="user">Usuário</label><input type="text" id="user" spellcheck="false" autocomplete="off"></div>
+      <div><label for="password">Senha</label><input type="password" id="password" autocomplete="off"></div>
+      <div><label for="model">Modelo no Ollama</label>
+       <select id="model">
+        <option value="sqlcoder:7b">SQLCoder 7B (sqlcoder:7b)</option>
+        <option value="sqlcoder:15b">SQLCoder 15B (sqlcoder:15b) · mais lento</option>
+       </select></div>
+     </div>
+     <p class="hint">A senha não é salva em lugar nenhum (fica só na memória do servidor). Use um usuário de teste com permissão apenas de leitura (SELECT): é a proteção mais forte da ferramenta.</p>
+     <div class="actions">
+      <span id="conn-msg" role="status"></span>
+      <button class="primary" id="connect" type="button">Conectar</button>
+     </div>
+    </div>
+   </div>
+
+   <!-- Aparece depois de conectar: descrições viram prompt para o modelo -->
+   <div class="card" id="ctx-card" hidden>
+    <div class="card-head">Contexto das tabelas e colunas</div>
+    <div class="card-body">
+     <p class="hint">Estrutura lida do banco. Explique o que cada tabela e coluna significa no seu projeto: isso vai junto com o esquema para o SQLCoder. Desmarque as tabelas e colunas que nunca devem ser usadas. Ao perguntar, a ferramenta escolhe entre as marcadas só as relacionadas à pergunta (pelo nome e pelas descrições): descrições claras melhoram essa escolha. "Interpretar com IA" sugere descrições para os campos vazios, que você aceita, edita ou corrige.</p>
+     <label for="project">Sobre o projeto (opcional)</label>
+     <textarea id="project" rows="3" placeholder="Ex.: Sistema de suporte de uma loja virtual. 'Chamado' é um pedido de ajuda aberto por um cliente."></textarea>
+     <div class="bulk">
+      <span id="ctx-count"></span>
+      <div>
+       <button class="btn" id="none-tables" type="button">Desmarcar todas</button>
+       <button class="btn" id="all-tables" type="button">Marcar todas</button>
+      </div>
+     </div>
+     <!-- Interpretação do esquema pela IA: sugestões para revisão humana -->
+     <div class="ia-bar">
+      <button class="btn" id="ia-all" type="button" title="Lê uma amostra de cada tabela marcada e sugere descrições para os campos vazios.">Interpretar com IA</button>
+      <button class="stop" id="ia-stop" type="button" hidden>Parar</button>
+      <span id="ia-status" aria-live="polite"></span>
+     </div>
+     <p id="ia-summary" class="hint"></p>
+     <div id="tables"></div>
+     <div class="actions">
+      <div>
+       <button class="btn" id="ctx-export" type="button" title="Salva descrições, origens, seleção e exemplos em um arquivo JSON.">Exportar contexto</button>
+       <button class="btn" id="ctx-import" type="button" title="Substitui o contexto deste banco pelo de um arquivo JSON exportado.">Importar contexto</button>
+       <input type="file" id="ctx-file" accept=".json,application/json" hidden>
+      </div>
+      <button class="primary" id="to-ask" type="button">Ir para as perguntas</button>
+     </div>
+    </div>
+   </div>
+
+   <!-- Exemplos pergunta -> SQL conferido: entram no prompt das perguntas parecidas -->
+   <div class="card" id="ex-card" hidden>
+    <div class="card-head"><span>Exemplos de perguntas e SQL</span><span class="meta" id="ex-count"></span></div>
+    <div class="card-body">
+     <p class="hint">Consultas corretas deste banco ensinam ao modelo os nomes e JOINs certos. Só são aceitos SQLs que o banco confere sem erro, mas revise a lógica: um exemplo errado ensina o erro. Prefira exemplos com as tabelas que você costuma marcar.</p>
+     <ul id="examples"></ul>
+     <label for="ex-q">Pergunta</label>
+     <input type="text" id="ex-q" placeholder="Ex.: Liste o nome e o sobrenome das pessoas cadastradas">
+     <label for="ex-sql" class="mt">SQL correto</label>
+     <textarea id="ex-sql" rows="3" spellcheck="false" placeholder="SELECT FIRST 50 NOME, SOBRENOME FROM CADPESSOA"></textarea>
+     <div class="actions"><span></span><button class="btn" id="ex-add" type="button">Conferir e adicionar</button></div>
+    </div>
+   </div>
+  </section>
+
+  <!-- Tela 2: pergunta, SQL, execução e resultados -->
+  <section id="view-ask" class="view" hidden>
+   <div class="card">
+    <div class="card-head"><label for="q">Qual é a sua pergunta?</label></div>
+    <div class="card-body">
+     <textarea id="q" rows="4" placeholder="Ex.: Quais clientes abriram mais de 3 chamados este ano?"></textarea>
+     <p id="used" class="hint" aria-live="polite"></p>
+     <div class="actions">
+      <small>Ctrl + Enter para gerar</small>
+      <div>
+       <button class="primary" id="go" type="button">Gerar SQL</button>
+       <button class="stop" id="stop" type="button" hidden>Parar</button>
+      </div>
+     </div>
+    </div>
+   </div>
+
+   <div class="card">
+    <div class="card-head"><span>Consulta SQL</span><button class="btn" id="copy" type="button">Copiar</button></div>
+    <!-- Editável: a revisão humana pode corrigir o SQL antes de validar/executar -->
+    <div class="code"><textarea id="out" rows="8" spellcheck="false" placeholder="-- O SQL gerado aparecerá aqui. Você pode editá-lo antes de validar ou executar."></textarea></div>
+    <p id="check" aria-live="polite"></p>
+    <!-- Separação entre geração, validação e execução -->
+    <div class="actions exec-bar">
+     <small id="exec-hint">Valide a consulta no banco para liberar a execução.</small>
+     <div>
+      <button class="btn" id="recheck" type="button">Conferir no banco</button>
+      <button class="btn" id="save-ex" type="button" disabled title="Salva a pergunta e este SQL validado como exemplo para o modelo.">Salvar como exemplo</button>
+      <button class="primary" id="exec" type="button" disabled title="Valide a consulta antes de executar.">Executar consulta</button>
+     </div>
+    </div>
+   </div>
+
+   <div class="card" id="res-card" hidden>
+    <div class="card-head"><span>Resultados</span><span class="meta" id="res-meta"></span></div>
+    <div class="table-wrap"><table id="res-table"></table></div>
+    <p id="res-note" aria-live="polite"></p>
+   </div>
+
+   <div class="card">
+    <div class="card-head"><span>Perguntas recentes</span><button class="link" id="clear-hist" type="button">Limpar</button></div>
+    <ul id="history"></ul>
+   </div>
+  </section>
+
+ </div></div>
+</main>
+
+<!-- Confirmação explícita antes de executar (requisito de segurança do projeto) -->
+<dialog id="dlg">
+ <h2>Executar consulta?</h2>
+ <p>A consulta será executada no Firebird conectado dentro de uma transação <strong>somente leitura</strong>, com retorno limitado a <strong id="dlg-rows"></strong> linhas.</p>
+ <p class="hint">Revise o SQL antes de confirmar: a ferramenta garante a leitura, mas não corrige erros de lógica nem de regra de negócio.</p>
+ <div class="actions">
+  <button class="btn" id="dlg-cancel" type="button">Cancelar</button>
+  <button class="primary" id="dlg-ok" type="button">Executar</button>
+ </div>
+</dialog>
+
+<div id="toasts" role="status"></div>
+<script src="app.js"></script>
+</body>
+</html>

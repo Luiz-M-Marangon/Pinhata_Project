@@ -1,0 +1,9 @@
+{
+  "name": "text-to-sql-firebird",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Ferramenta Text-to-SQL para Firebird 2.5 com SQLCoder via Ollama",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=20.12" },
+  "dependencies": { "node-firebird": "^1.1.0" }
+}
