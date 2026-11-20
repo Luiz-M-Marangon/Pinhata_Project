@@ -1,0 +1,30 @@
+{
+  "quando": "2026-11-20T19:06:00.727Z",
+  "status": 200,
+  "modelo": "sqlcoder:7b",
+  "raw": true,
+  "opcoes": {
+    "temperature": 0,
+    "num_predict": 630,
+    "stop": [
+      "[/SQL]"
+    ],
+    "num_ctx": 8192
+  },
+  "prompt": "### Task\nGenerate Firebird 2.5 COMMENT ON statements that document the table VENDA and its columns. Write every comment in Brazilian Portuguese.\n\n### Instructions\n- Write one COMMENT ON TABLE statement, then one COMMENT ON COLUMN statement for each column listed below, in the same order, and nothing else.\n- Each comment explains in Brazilian Portuguese, in at most 20 words, what the table or column means for the business.\n- Use only the names, types, keys, relationships and example values shown. Do not invent business rules.\n- When example values look like codes (for example 'S'/'N' or 1/2/3), say the probable meaning of each code.\n- If the meaning cannot be deduced, start the comment with 'Incerto:'.\n- Escape single quotes inside a comment by doubling them.\n\n### Database Schema\n-- Contexto do projeto: Sistema ERP para cadastro de pessoas, produtos e finalização em vendas. Tabela VENDA funciona como ponto central do sistema, reunindo o responsável pela compra, qual foi a forma de pagamento, qual ou quais produtos foram comprados e o valor total.\nCREATE TABLE VENDA (\n    CODIGO INTEGER PRIMARY KEY, -- exemplos: \"1\", \"2\", \"3\", \"4\", \"5\", \"6\", \"7\", \"8\"\n    COD_PRODUTO1 INTEGER, -- exemplos: \"16\", \"2\", \"7\", \"18\", \"11\", \"17\", \"6\", \"1\"\n    COD_PRODUTO2 INTEGER, -- exemplos: \"17\", \"7\", \"8\", \"12\", \"13\", \"6\", \"2\" (+11 vazios)\n    COD_PRODUTO3 INTEGER, -- exemplos: \"18\", \"7\", \"17\" (+17 vazios)\n    COD_CLIENTE INTEGER, -- exemplos: \"8\", \"6\", \"4\", \"7\", \"3\", \"5\", \"9\", \"10\"\n    VALORTOTAL INTEGER, -- exemplos: \"630\", \"850\", \"250\", \"260\", \"600\", \"150\", \"350\", \"320\"\n    COD_TIPOPGTO INTEGER, -- exemplos: \"4\", \"2\", \"1\", \"5\", \"3\"\n    FOREIGN KEY (COD_PRODUTO1) REFERENCES PRODUTO(CODIGO),\n    FOREIGN KEY (COD_PRODUTO2) REFERENCES PRODUTO(CODIGO),\n    FOREIGN KEY (COD_PRODUTO3) REFERENCES PRODUTO(CODIGO),\n    FOREIGN KEY (COD_CLIENTE) REFERENCES PESSOA(CODIGO),\n    FOREIGN KEY (COD_TIPOPGTO) REFERENCES TIPOPGTO(CODIGO)\n);\n-- Relacionamentos: VENDA.COD_PRODUTO1 referencia PRODUTO(CODIGO); VENDA.COD_PRODUTO2 referencia PRODUTO(CODIGO); VENDA.COD_PRODUTO3 referencia PRODUTO(CODIGO); VENDA.COD_CLIENTE referencia PESSOA(CODIGO); VENDA.COD_TIPOPGTO referencia TIPOPGTO(CODIGO)\n-- Amostra de 20 linha(s); valores só das colunas classificadas como seguras.\n\n### Answer\nGiven the database schema, here are the COMMENT ON statements that document VENDA:\n[SQL]\nCOMMENT ON TABLE VENDA IS '",
+  "resposta": "Tabela VENDA funciona como ponto central do sistema, reunindo o responsável pela compra, forma de pagamento, produtos comprados e o valor total.';\nCOMMENT ON COLUMN VENDA.COD_PRODUTO1 IS 'Coluna 16 é um produto de teste.';\nCOMMENT ON COLUMN VENDA.COD_PRODUTO2 IS 'Coluna 7 é um produto de teste.';\nCOMMENT ON COLUMN VENDA.COD_PRODUTO3 IS 'coluna 18 é um produto de teste.';\nCOMMENT ON COLUMN VENDA.COD_CLIENTE IS 'coluna 8 é um cliente de teste.';\nCOMMENT ON COLUMN VENDA.VALORTOTAL IS 'valor total da teste.';\nCOMMENT ON COLUMN VENDA.COD_TIPOPGTO IS 'coluna 4 é um tipo de pagamento de teste.';",
+  "final": {
+    "model": "sqlcoder:7b",
+    "created_at": "2026-11-20T19:06:00.7251707Z",
+    "response": "Tabela VENDA funciona como ponto central do sistema, reunindo o responsável pela compra, forma de pagamento, produtos comprados e o valor total.';\nCOMMENT ON COLUMN VENDA.COD_PRODUTO1 IS 'Coluna 16 é um produto de teste.';\nCOMMENT ON COLUMN VENDA.COD_PRODUTO2 IS 'Coluna 7 é um produto de teste.';\nCOMMENT ON COLUMN VENDA.COD_PRODUTO3 IS 'coluna 18 é um produto de teste.';\nCOMMENT ON COLUMN VENDA.COD_CLIENTE IS 'coluna 8 é um cliente de teste.';\nCOMMENT ON COLUMN VENDA.VALORTOTAL IS 'valor total da teste.';\nCOMMENT ON COLUMN VENDA.COD_TIPOPGTO IS 'coluna 4 é um tipo de pagamento de teste.';",
+    "done": true,
+    "done_reason": "stop",
+    "total_duration": 14855453500,
+    "load_duration": 7291200,
+    "prompt_eval_count": 924,
+    "prompt_eval_cached_count": 19,
+    "prompt_eval_duration": 827192000,
+    "eval_count": 232,
+    "eval_duration": 13985895000
+  }
+}

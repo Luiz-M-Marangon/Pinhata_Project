@@ -39,7 +39,9 @@ const MAX_ROWS = Math.max(1, Number(process.env.MAX_ROWS) || 200);      // linha
 // em loop. Valores maiores usam mais memória e deixam a geração mais lenta.
 const OLLAMA_NUM_CTX = Math.max(512, Number(process.env.OLLAMA_NUM_CTX) || 8192);
 // Interpretação do esquema pela IA (descrições sugeridas para revisão humana).
-const DESC_MODEL = process.env.DESC_MODEL || "gemma4:e4b";                  // modelo de uso geral que escreve as descrições
+// O padrão é o próprio SQLCoder (escolhido na interface); DESC_MODEL é o modelo
+// de uso geral oferecido como ALTERNATIVA opcional (ex.: para comparar no TCC).
+const DESC_MODEL = process.env.DESC_MODEL || "gemma4:e4b";                  // alternativa opcional ao SQLCoder
 const SAMPLE_ROWS = Math.min(200, Math.max(1, Number(process.env.SAMPLE_ROWS) || 20)); // linhas lidas por tabela
 const MASK_SENSITIVE = String(process.env.DESC_MASK_SENSITIVE ?? "true").toLowerCase() !== "false"; // não ler CPF, e-mail, telefone...
 // Diagnóstico (opcional, desligado por padrão): grava a ÚLTIMA geração de cada
@@ -324,23 +326,32 @@ async function executeFb(sql) {
 /* =============================================================================
  * Amostra de valores para a interpretação do esquema pela IA
  * ========================================================================== */
-// A IA de descrição entende muito melhor uma coluna vendo valores reais
-// (ex.: CLIENTE só tem 'S'/'N'; COD_TIPOPGTO vai de 1 a 4). Aqui lemos as
-// primeiras SAMPLE_ROWS linhas de UMA tabela, em transação READ ONLY, e
-// devolvemos até 8 valores distintos por coluna (textos cortados em 40
-// caracteres). Nada é gravado; os valores vão só para o Ollama local.
-// Segurança: o nome da tabela vem do pedido, mas só é aceito se existir no
+// O modelo entende muito melhor uma coluna vendo valores reais (ex.: CLIENTE
+// só tem 'S'/'N'; COD_TIPOPGTO vai de 1 a 4). Aqui lemos as primeiras
+// SAMPLE_ROWS linhas de UMA tabela, em transação READ ONLY, e devolvemos até 8
+// valores distintos por coluna (textos cortados em 40 caracteres). Nada é
+// gravado; os valores vão só para o Ollama local.
+// FILTRO DE PRIVACIDADE (skill de análise do banco, seção 4): é esta camada,
+// no servidor, que decide o que pode sair do banco — não o prompt.
+//   - Só são lidas as colunas que a pessoa classificou como SEGURAS na tela
+//     (lista "safe" do pedido). Colunas "desconhecidas" ou "sensíveis" nem são
+//     consultadas: o valor nunca sai do Firebird.
+//   - Mesmo marcada como segura, a coluna é bloqueada se o nome indicar dado
+//     pessoal (lista SENSIVEL abaixo), com DESC_MASK_SENSITIVE=true (padrão).
+//   - BLOBs nunca são lidos.
+// Segurança do SQL: o nome da tabela e das colunas só é aceito se existir no
 // esquema lido na conexão; os identificadores vão entre aspas duplas, com
 // aspas internas duplicadas — o SQL nunca é montado com texto livre do usuário.
-// Colunas BLOB não são lidas. Com DESC_MASK_SENSITIVE=true (padrão), colunas
-// cujo nome indica dado pessoal (CPF, e-mail, telefone, senha...) também não.
-const SENSIVEL = /(CPF|CNPJ|^RG$|^RG_|_RG$|EMAIL|E_MAIL|FONE|CELULAR|SENHA|PASSWORD|TOKEN)/i;
+const SENSIVEL = /(CPF|CNPJ|^RG$|^RG_|_RG$|EMAIL|E_MAIL|FONE|CELULAR|SENHA|PASSWORD|TOKEN|ENDERE|LOGRADOURO|NASC|AGENCIA|CONTA_?CORRENTE|CARTAO|SALARIO)/i;
 const qid = n => '"' + String(n).replace(/"/g, '""') + '"';
-async function sampleTable(name) {
+async function sampleTable(name, safe) {
   if (!fbOpts || !fbSchema) throw new Error("Nenhum banco conectado. Conecte um Firebird primeiro.");
   const t = fbSchema.tables.find(x => x.name === name);
   if (!t) throw new Error("Tabela não encontrada no esquema lido do banco.");
-  const omitida = c => c.type.startsWith("BLOB") ? "binário" : (MASK_SENSITIVE && SENSIVEL.test(c.name)) ? "dado sensível" : null;
+  const seguras = new Set(Array.isArray(safe) ? safe.map(String) : []); // sem lista = nenhum valor é lido
+  const omitida = c => c.type.startsWith("BLOB") ? "binário"
+    : (MASK_SENSITIVE && SENSIVEL.test(c.name)) ? "dado sensível"
+    : !seguras.has(c.name) ? "não classificada como segura" : null;
   const ler = t.columns.filter(c => !omitida(c));
   const rows = ler.length
     ? await fbRun(tr => fbQuery(tr, `SELECT FIRST ${SAMPLE_ROWS} ${ler.map(c => qid(c.name)).join(", ")} FROM ${qid(t.name)}`))
@@ -401,7 +412,7 @@ http.createServer(async (req, res) => {
     }
     // Configuração pública para a interface (nada de segredos aqui).
     if (req.method === "GET" && req.url === "/api/config")
-      return send(res, 200, { maxRows: MAX_ROWS, model: OLLAMA_MODEL, numCtx: OLLAMA_NUM_CTX, descModel: DESC_MODEL, sampleRows: SAMPLE_ROWS, maskSensitive: MASK_SENSITIVE });
+      return send(res, 200, { maxRows: MAX_ROWS, model: OLLAMA_MODEL, numCtx: OLLAMA_NUM_CTX, descModel: DESC_MODEL, sampleRows: SAMPLE_ROWS, maskSensitive: MASK_SENSITIVE, sensitivePattern: SENSIVEL.source });
     // Proxy do Ollama: repassa a geração ao serviço local e evita CORS no navegador.
     // Só a rota de geração usada pela interface é liberada; as demais rotas do
     // Ollama (apagar, baixar ou copiar modelos etc.) não ficam expostas.
@@ -429,7 +440,7 @@ http.createServer(async (req, res) => {
     if (req.method === "POST" && req.url === "/api/connect")
       return send(res, 200, await connectFirebird(JSON.parse((await readBody(req)) || "{}")));
     if (req.method === "POST" && req.url === "/api/sample")
-      return send(res, 200, await sampleTable(JSON.parse((await readBody(req)) || "{}").table));
+    { const b = JSON.parse((await readBody(req)) || "{}"); return send(res, 200, await sampleTable(b.table, b.safe)); }
     if (req.method === "POST" && req.url === "/api/validate")
       return send(res, 200, await validateFb(JSON.parse((await readBody(req)) || "{}").sql));
     if (req.method === "POST" && req.url === "/api/execute")

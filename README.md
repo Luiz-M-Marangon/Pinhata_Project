@@ -12,10 +12,10 @@ A ferramenta não elimina a necessidade de compreender o banco nem substitui a r
 
 ## Arquitetura implementada
 
-- **Interface web** (`versão1/index.html`, `app.js`, `styles.css`): HTML 5, CSS 3 e JavaScript ES2025 puros, sem frameworks e sem etapa de build. Duas telas: conexão/contexto e perguntas.
+- **Interface web** (`versão1/index.html`, `app.js`, `styles.css`): HTML 5, CSS 3 e JavaScript ES2025 puros, sem frameworks e sem etapa de build. Três telas no menu lateral: conexão/contexto, perguntas e avaliação dos modelos.
 - **API** (`versão1/server.js`): servidor Node.js sem framework que serve a interface, conecta ao Firebird, lê o esquema, valida e executa consultas e faz proxy do Ollama (somente a rota de geração `POST /api/generate`).
 - **SQLCoder via Ollama:** geração local do SQL. Modelo padrão: `sqlcoder:7b`; a tela de conexão permite escolher entre `sqlcoder:7b` e `sqlcoder:15b` (o 15B precisa de `ollama pull sqlcoder:15b`, ~9 GB, e é mais lento). O histórico registra qual modelo gerou cada SQL (os testes registrados abaixo foram feitos com `sqlcoder:latest`, 7B/Q4).
-- **Modelo de interpretação do esquema (Gemma via Ollama):** modelo de uso geral (padrão `gemma4:e4b`, configurável em `DESC_MODEL`) que lê a estrutura e uma amostra de valores de cada tabela e sugere descrições de tabelas e colunas para revisão humana. Precisa estar instalado: `ollama pull gemma4:e4b` (confira o nome com `ollama list`). O SQLCoder não é usado nessa etapa porque só gera SQL.
+- **Interpretação do esquema (SQLCoder por padrão):** o mesmo SQLCoder escolhido para as perguntas lê a estrutura (e, só das colunas classificadas como Seguras, uma amostra de valores) e devolve o significado de cada tabela e coluna, para confirmação humana. Como ele só foi treinado para escrever SQL, a interpretação é pedida como comandos `COMMENT ON TABLE/COLUMN ... IS '...'` do Firebird, que a interface lê. Alternativa opcional: um modelo de uso geral (`DESC_MODEL`, padrão `gemma4:e4b`), útil para comparar; só precisa estar instalado se for escolhido. Não é treinamento: os pesos não mudam (veja `docs/viabilidade-fine-tuning.md`).
 - **Firebird 2.5:** banco relacional de destino, único suportado.
 
 Decisões registradas pelo autor: o protótipo original (`prototipo.html`) suportava PostgreSQL e é mantido apenas como registro histórico; nesta versão o destino é **somente Firebird 2.5** e o suporte a PostgreSQL foi removido. A interface usa JavaScript puro em vez de Bootstrap/React para manter a execução simples (um único `npm start`, sem build).
@@ -32,7 +32,7 @@ Decisões registradas pelo autor: o protótipo original (`prototipo.html`) supor
 | 6. SQL apresentado para revisão (editável) e validação sem execução | Implementado (`/api/validate`) |
 | 7. Execução somente após validação e confirmação explícita | Implementado (`/api/execute` + diálogo de confirmação) |
 | 8. Resultados apresentados com limite e tratamento de conjunto vazio | Implementado |
-| 9. Revisão final por pessoa responsável | Responsabilidade humana (fora do software) |
+| 9. Revisão final por pessoa responsável | Responsabilidade humana; a avaliação semântica (correta/incorreta) é registrada na tela após a execução |
 
 ## Estrutura do repositório
 
@@ -40,9 +40,11 @@ Decisões registradas pelo autor: o protótipo original (`prototipo.html`) supor
 projeto/
 ├── AGENTS.md            # orientações para agentes de IA
 ├── README.md            # este arquivo
+├── docs/
+│   └── viabilidade-fine-tuning.md  # avaliação (sem scripts) do treino do SQLCoder
 ├── package.json         # atalho: permite npm start / npm install a partir da raiz
 └── versão1/
-    ├── index.html       # interface (2 telas + diálogo de confirmação)
+    ├── index.html       # interface (3 telas + diálogo de confirmação)
     ├── styles.css       # estilos da interface
     ├── app.js           # lógica da interface (contexto, geração, validação, execução)
     ├── server.js        # API: esquema, validação, execução, proxy do Ollama
@@ -76,13 +78,28 @@ O `npm start` funciona tanto **na raiz** (o `package.json` da raiz é um atalho 
 
 1. Abra `http://localhost:3000`.
 2. Em **Conexão e contexto**, informe servidor, porta (padrão 3050), caminho do `.fdb`, usuário e senha → **Conectar**. O esquema do banco aparece automaticamente.
-3. Descreva o significado de tabelas e colunas relevantes e desmarque as que não devem ser usadas. **Desmarcar todas** limpa tabelas e colunas de uma vez; ao marcar uma tabela sem colunas marcadas, todas as colunas dela voltam a ser marcadas (cada tabela tem também "marcar/desmarcar todas" para as colunas). O contador mostra quantas tabelas e colunas irão para o modelo.
-   - **Interpretar com IA** (todas as tabelas marcadas) ou **interpretar esta tabela**: o servidor lê as primeiras `SAMPLE_ROWS` linhas da tabela (só leitura) e o modelo de interpretação sugere descrições para os campos **vazios** — o que você escreveu nunca é sobrescrito. Cada sugestão aparece com a marca **IA · confiança · revisar**: clique na marca para aceitar sem editar, edite o texto para corrigir, ou use **aceitar sugestões pendentes** da tabela. A linha de resumo conta descrições pendentes, aceitas, editadas e escritas por você. Todas as descrições (revisadas ou não) vão para o SQLCoder.
-   - **Exportar contexto / Importar contexto**: salva ou carrega em JSON as descrições (com a origem de cada uma), a seleção de tabelas/colunas e os exemplos. Importar substitui o contexto do banco conectado.
+3. O contexto do banco é montado em três etapas (banco novo começa sem nada selecionado; banco já interpretado abre direto na etapa 3):
+   - **1. Selecionar e classificar:** marque as tabelas e colunas que o modelo vai interpretar (as mesmas serão usadas nas perguntas). Em cada coluna escolha a privacidade: **Segura** (envia amostra de até `SAMPLE_ROWS` linhas), **Desconhecida** (padrão) ou **Sensível** (só nome, tipo e chaves). Colunas cujo nome indica dado pessoal ou BLOB ficam travadas como Sensíveis. Escolha também o **modelo da interpretação** (SQLCoder ou a alternativa `DESC_MODEL`) → **Confirmar seleção e interpretar**.
+   - **2. Interpretação:** um diálogo resume o que vai ao modelo e avisa que as descrições atuais das tabelas/colunas selecionadas (inclusive as suas) serão apagadas; antes disso, um **backup JSON** do contexto é baixado. O modelo interpreta uma tabela por vez (tabelas largas em lotes de 25 colunas); dá para **Parar**.
+   - **3. Revisar e confirmar:** cada descrição mostra o nível (níveis da skill): **INFERIDA** (do modelo; clique na marca para confirmar), **CONFIRMADA** (confirmada, editada ou escrita por você), **DESCONHECIDA** (o modelo não conseguiu) e **PENDENTE** (ainda não interpretada). Editar uma inferida a confirma; apagar o texto a descarta. Há "confirmar todas" por tabela e geral, e "interpretar esta tabela de novo" (preenche só o que não está confirmado). **Nova interpretação** volta à etapa 1. Todas as descrições com texto (confirmadas ou não) vão para o SQLCoder.
+   - **Exportar contexto / Importar contexto**: salva ou carrega em JSON o dicionário (descrições, nível/origem, modelo e data da interpretação, classificação de privacidade, seleção) e os exemplos. Importar substitui o contexto do banco conectado; serve também para recuperar um backup automático.
    → **Ir para as perguntas**.
 4. Escreva a pergunta → **Gerar SQL** (ou Ctrl+Enter). O SQL aparece em streaming; a primeira geração é mais lenta porque o modelo precisa ser carregado na memória.
 5. Revise o SQL (a caixa é editável). O servidor confere a consulta no banco **sem executá-la** e avisa se o banco recusar.
 6. **Executar consulta** → confirme no diálogo → os resultados aparecem em tabela (limitados a `MAX_ROWS`), com tempo gasto e aviso de truncamento.
+7. Logo abaixo dos resultados, marque se a resposta do modelo está **semanticamente correta** (✓ Correta / ✕ Incorreta, com observação opcional). Clicar de novo desfaz a marcação. Se o SQL foi editado antes de executar, a tela lembra que a marcação vale para a resposta **original** do modelo.
+8. **Avaliação dos modelos** (menu lateral): para cada modelo (7B e 15B), total de perguntas, sintaxe correta, semântica correta (sobre o total e sobre as revisadas) e respostas com erro, mais uma barra com a situação de cada pergunta. Abaixo, a lista das perguntas com filtros por modelo e situação, o SQL gerado (e o executado, se editado), as mensagens do banco, o tempo de geração e botões para revisar a semântica depois. **Exportar CSV** baixa todos os registros (separador `;`, abre no Excel).
+
+### Como a avaliação é registrada
+
+Cada geração vira um registro no navegador (`localStorage`, até 1000), com o modelo que a produziu. Não guarda dados do banco: só pergunta, SQL, situação e número de linhas.
+
+- **Sintaxe correta:** o Firebird aceitou o SQL **como o modelo gerou**, na conferência automática feita logo após a geração. Edições posteriores não mudam esse resultado. Consultas com `WITH` (que o Firebird 2.5 não confere antes) ficam "não conferidas" até a execução, que define o resultado.
+- **Semântica correta:** marcação humana após a execução (ou depois, na tela de avaliação). Só é possível para SQL que o banco não recusou.
+- **Retornaram erro:** geração sem SQL utilizável (cortada pelo limite de tokens, vazia ou "I do not know"), SQL recusado pelo banco ou falha na execução. Uma consulta aceita na validação que falha ao executar conta em "sintaxe correta" e também em "erros".
+- **Não registrados:** gerações interrompidas pelo botão Parar e falhas de ambiente (servidor, Ollama ou banco fora do ar, modelo não instalado), porque não medem o modelo.
+- Reabrir uma pergunta do histórico reaproveita o registro original, sem duplicar.
+- Os registros ficam só neste navegador: limpar os dados do navegador os apaga. Exporte o CSV para guardar os resultados da avaliação.
 
 ## Configuração
 
@@ -97,9 +114,9 @@ O servidor lê o arquivo `versão1/.env` na inicialização, mesmo quando inicia
 | `OLLAMA_MODEL` | `sqlcoder:7b` | Modelo pré-selecionado na lista da interface (7B e 15B já aparecem; outro nome é acrescentado) |
 | `MAX_ROWS` | `200` | Limite de linhas por execução |
 | `OLLAMA_NUM_CTX` | `8192` | Janela de contexto do modelo (tokens), aplicada pelo servidor a cada geração |
-| `DESC_MODEL` | `gemma4:e4b` | Modelo do Ollama que sugere as descrições de tabelas e colunas |
+| `DESC_MODEL` | `gemma4:e4b` | Modelo de uso geral oferecido como **alternativa** ao SQLCoder na interpretação do banco (o padrão é o SQLCoder) |
 | `SAMPLE_ROWS` | `20` | Linhas lidas de cada tabela para a interpretação (máximo 200) |
-| `DESC_MASK_SENSITIVE` | `true` | Se `true`, não lê valores de colunas cujo nome indica dado pessoal (CPF, CNPJ, RG, e-mail, telefone, celular, senha, token); BLOBs nunca são lidos |
+| `DESC_MASK_SENSITIVE` | `true` | Se `true`, nunca lê valores de colunas cujo nome indica dado pessoal (CPF, CNPJ, RG, e-mail, telefone, celular, senha, token, endereço, logradouro, nascimento, agência, conta corrente, cartão, salário), mesmo que marcadas como Seguras; BLOBs nunca são lidos |
 | `DEBUG_PROMPT` | `false` | Se `true`, grava a última geração de cada modelo (prompt + resposta bruta) em `versão1/debug/` para diagnóstico. Contém esquema e pergunta: use só com banco de teste |
 
 O modelo escolhido na lista "Modelo no Ollama" fica salvo no navegador e tem prioridade sobre `OLLAMA_MODEL`. A troca vale já na próxima geração, sem reconectar.
@@ -108,7 +125,7 @@ A conexão com o Firebird (servidor, caminho, usuário, senha) é informada na t
 
 ## Segurança
 
-**Amostra de valores (interpretação pela IA):** `/api/sample` só aceita tabelas presentes no esquema lido na conexão, monta o `SELECT FIRST n` com identificadores entre aspas (nunca com texto livre) e roda na mesma transação READ ONLY. Os valores vão apenas para o Ollama local e não são gravados. Em banco real, mantenha `DESC_MASK_SENSITIVE=true` e avalie a LGPD antes de usar.
+**Amostra de valores (interpretação do banco):** o filtro de privacidade fica no **servidor**, não no prompt. `/api/sample` só lê as colunas que a pessoa classificou como **Seguras**; colunas Desconhecidas ou Sensíveis nem são consultadas, e o valor nunca sai do Firebird. Com `DESC_MASK_SENSITIVE=true`, nomes que indicam dado pessoal são bloqueados mesmo se marcados como Seguros. A rota só aceita tabelas presentes no esquema lido na conexão, monta o `SELECT FIRST n` com identificadores entre aspas (nunca com texto livre) e roda na mesma transação READ ONLY. Os valores vão apenas para o Ollama local e não são gravados. Limitação: o bloqueio automático olha o **nome** da coluna; uma coluna como `OBSERVACAO` pode conter dado pessoal, por isso o padrão é Desconhecida (sem valores). Em banco real, mantenha `DESC_MASK_SENSITIVE=true` e avalie a LGPD antes de usar.
 
 O SQL gerado pelo modelo é tratado como entrada não confiável. Camadas independentes — o SQL só chega ao banco se passar por todas:
 
@@ -181,10 +198,12 @@ Diretrizes: registre pergunta, esquema necessário, consulta de referência revi
 - Valores `DECIMAL`/`NUMERIC` podem chegar como texto (comportamento do driver).
 - Datas são exibidas no fuso local da máquina.
 - Regras de negócio nem sempre podem ser deduzidas do esquema; a revisão humana continua necessária.
+- **Interpretação pelo SQLCoder não testada com o modelo real:** o SQLCoder foi treinado para gerar SQL a partir de perguntas, não para descrever tabelas. O formato `COMMENT ON` foi escolhido para aproximar a tarefa do que ele conhece, mas ele pode responder em inglês, deixar colunas sem comentário (ficam DESCONHECIDAS), repetir textos ou devolver "I do not know". Compare com a alternativa `DESC_MODEL` antes de concluir.
+- **Fine-tuning:** não implementado. Avaliação de viabilidade e próximos passos em `docs/viabilidade-fine-tuning.md`.
 
 ## Estado do projeto
 
-- **Implementado (confirmado no código):** conexão e leitura de esquema do Firebird 2.5; seleção de tabelas e colunas enviadas ao modelo; seleção automática, entre as marcadas, das tabelas relacionadas à pergunta (heurística por palavras: nome citado na pergunta, nome/descrição de tabela e coluna; as tabelas enviadas aparecem abaixo da pergunta); exemplos pergunta → SQL conferido por banco (até 3 por pergunta, só os parecidos com ela — ao menos metade das palavras relevantes em comum — e só com tabelas enviadas, com instrução para não copiar filtros); prompt no formato oficial do SQLCoder (`### Instructions`, com resposta "I do not know" tratada); interpretação do esquema por IA (amostra de valores + modelo de uso geral) com sugestões marcadas para revisão humana e registro da origem de cada descrição; exportação/importação do contexto em JSON; contexto descritivo salvo no navegador; geração via SQLCoder/Ollama com streaming e interrupção; validação sem execução; execução com confirmação explícita, transação READ ONLY e limite de linhas; resultados com tratamento de vazio/truncamento; SQL editável antes de validar/executar; histórico local; cópia do SQL; configuração por `.env`.
+- **Implementado (confirmado no código):** conexão e leitura de esquema do Firebird 2.5; seleção de tabelas e colunas enviadas ao modelo; seleção automática, entre as marcadas, das tabelas relacionadas à pergunta (heurística por palavras: nome citado na pergunta, nome/descrição de tabela e coluna; as tabelas enviadas aparecem abaixo da pergunta); exemplos pergunta → SQL conferido por banco (até 3 por pergunta, só os parecidos com ela — ao menos metade das palavras relevantes em comum — e só com tabelas enviadas, com instrução para não copiar filtros); prompt no formato oficial do SQLCoder (`### Instructions`, com resposta "I do not know" tratada); interpretação do banco em etapas (seleção e classificação de privacidade → confirmação com backup e limpeza → interpretação pelo SQLCoder via `COMMENT ON`, com modelo de uso geral opcional → revisão com níveis CONFIRMADA/INFERIDA/DESCONHECIDA/PENDENTE) e filtro de privacidade no servidor; exportação/importação do contexto em JSON; contexto descritivo salvo no navegador; geração via SQLCoder/Ollama com streaming e interrupção; validação sem execução; execução com confirmação explícita, transação READ ONLY e limite de linhas; resultados com tratamento de vazio/truncamento; revisão semântica após a execução e tela de avaliação por modelo (sintaxe, semântica e erros, com exportação CSV); SQL editável antes de validar/executar; histórico local; cópia do SQL; configuração por `.env`.
 - **Testado:** ver "Testes executados" (camada HTTP, verificação de segurança e geração com modelo real).
 - **Planejado:** bateria de avaliação acadêmica por níveis; propostas futuras (ex.: exportação de resultados em CSV) não estão aprovadas.
 - **Limitações pendentes:** comportamento com bancos grandes; qualidade com perguntas ambíguas; desempenho de geração em máquinas modestas.

@@ -8,7 +8,7 @@
 </head>
 <body>
 
-<!-- Menu lateral: navegação entre as duas telas + estado da conexão -->
+<!-- Menu lateral: navegação entre as telas + estado da conexão -->
 <aside id="side" aria-label="Menu">
  <div class="side-head">
   <span>Text-to-SQL</span>
@@ -17,6 +17,7 @@
  <nav>
   <button class="nav on" type="button" data-view="conn">Conexão e contexto</button>
   <button class="nav" type="button" data-view="ask" id="nav-ask" disabled>Perguntar</button>
+  <button class="nav" type="button" data-view="eval">Avaliação dos modelos</button>
  </nav>
  <p id="dbstate">Desconectado. Conecte um Firebird para liberar as perguntas.</p>
 </aside>
@@ -55,11 +56,19 @@
     </div>
    </div>
 
-   <!-- Aparece depois de conectar: descrições viram prompt para o modelo -->
-   <div class="card" id="ctx-card" hidden>
-    <div class="card-head">Contexto das tabelas e colunas</div>
+   <!-- Aparece depois de conectar. Três etapas: selecionar -> interpretar -> revisar.
+        As descrições confirmadas viram contexto (prompt) para o SQLCoder. -->
+   <div class="card" id="ctx-card" data-step="sel" hidden>
+    <div class="card-head"><span>Contexto das tabelas e colunas</span><span class="meta" id="interp-meta"></span></div>
     <div class="card-body">
-     <p class="hint">Estrutura lida do banco. Explique o que cada tabela e coluna significa no seu projeto: isso vai junto com o esquema para o SQLCoder. Desmarque as tabelas e colunas que nunca devem ser usadas. Ao perguntar, a ferramenta escolhe entre as marcadas só as relacionadas à pergunta (pelo nome e pelas descrições): descrições claras melhoram essa escolha. "Interpretar com IA" sugere descrições para os campos vazios, que você aceita, edita ou corrige.</p>
+     <ol class="steps" id="steps">
+      <li data-s="sel" class="on">1. Selecionar e classificar</li>
+      <li data-s="run">2. Interpretação pelo modelo</li>
+      <li data-s="rev">3. Revisar e confirmar</li>
+     </ol>
+     <p class="hint only-sel">Marque as tabelas e colunas que o modelo vai interpretar (as mesmas serão usadas nas perguntas). Em cada coluna, escolha a privacidade: só as <strong>Seguras</strong> enviam ao modelo uma amostra de valores; <strong>Desconhecidas</strong> e <strong>Sensíveis</strong> enviam apenas nome, tipo e chaves. Na dúvida, deixe Desconhecida. Colunas com nome de dado pessoal (CPF, e-mail, telefone, endereço...) ficam travadas como Sensíveis e o servidor nunca lê os valores delas.</p>
+     <p class="hint only-run">O modelo está interpretando as tabelas selecionadas, uma por vez. As interpretações aparecem abaixo conforme ficam prontas.</p>
+     <p class="hint only-rev">Confira o que o modelo interpretou. <strong>INFERIDA</strong>: clique na marca para confirmar, edite o texto para corrigir (fica confirmada) ou apague-o para descartar. <strong>DESCONHECIDA</strong>: o modelo não conseguiu interpretar; descreva você mesmo. Todas as descrições com texto vão para o SQLCoder nas perguntas; a tela de perguntas usa só tabelas marcadas.</p>
      <label for="project">Sobre o projeto (opcional)</label>
      <textarea id="project" rows="3" placeholder="Ex.: Sistema de suporte de uma loja virtual. 'Chamado' é um pedido de ajuda aberto por um cliente."></textarea>
      <div class="bulk">
@@ -69,9 +78,12 @@
        <button class="btn" id="all-tables" type="button">Marcar todas</button>
       </div>
      </div>
-     <!-- Interpretação do esquema pela IA: sugestões para revisão humana -->
      <div class="ia-bar">
-      <button class="btn" id="ia-all" type="button" title="Lê uma amostra de cada tabela marcada e sugere descrições para os campos vazios.">Interpretar com IA</button>
+      <span class="only-sel interp-sel"><label for="interp-model">Modelo da interpretação</label><select id="interp-model"></select></span>
+      <button class="primary only-sel" id="ia-all" type="button" title="Mostra um resumo e pede confirmação antes de começar.">Confirmar seleção e interpretar</button>
+      <button class="link only-sel" id="to-review" type="button">voltar para a revisão</button>
+      <button class="btn only-rev" id="confirm-all" type="button">Confirmar todas as inferidas</button>
+      <button class="btn only-rev" id="new-interp" type="button" title="Volta à etapa 1 para mudar a seleção e interpretar de novo.">Nova interpretação</button>
       <button class="stop" id="ia-stop" type="button" hidden>Parar</button>
       <span id="ia-status" aria-live="polite"></span>
      </div>
@@ -79,8 +91,8 @@
      <div id="tables"></div>
      <div class="actions">
       <div>
-       <button class="btn" id="ctx-export" type="button" title="Salva descrições, origens, seleção e exemplos em um arquivo JSON.">Exportar contexto</button>
-       <button class="btn" id="ctx-import" type="button" title="Substitui o contexto deste banco pelo de um arquivo JSON exportado.">Importar contexto</button>
+       <button class="btn" id="ctx-export" type="button" title="Salva descrições, origens, níveis, classificação, seleção e exemplos em um arquivo JSON.">Exportar contexto</button>
+       <button class="btn" id="ctx-import" type="button" title="Substitui o contexto deste banco pelo de um arquivo JSON exportado (inclusive um backup automático).">Importar contexto</button>
        <input type="file" id="ctx-file" accept=".json,application/json" hidden>
       </div>
       <button class="primary" id="to-ask" type="button">Ir para as perguntas</button>
@@ -140,11 +152,54 @@
     <div class="card-head"><span>Resultados</span><span class="meta" id="res-meta"></span></div>
     <div class="table-wrap"><table id="res-table"></table></div>
     <p id="res-note" aria-live="polite"></p>
+    <!-- Revisão semântica humana logo após a execução (entra na tela "Avaliação dos modelos") -->
+    <div id="review" hidden>
+     <div class="rev-head">
+      <div><strong>A resposta do modelo está semanticamente correta?</strong> <span class="meta" id="rev-model"></span>
+       <small>Confira se o SQL e os resultados respondem à pergunta segundo as regras de negócio. O banco aceitar a consulta só garante a sintaxe.</small></div>
+      <div class="rev-btns" role="group" aria-label="Avaliação semântica">
+       <button class="btn rev" type="button" data-sem="ok" aria-pressed="false">✓ Correta</button>
+       <button class="btn rev" type="button" data-sem="erro" aria-pressed="false">✕ Incorreta</button>
+      </div>
+     </div>
+     <p id="rev-edit" class="hint" hidden>Você editou o SQL antes de executar. Avalie a resposta <strong>original do modelo</strong>: se a edição corrigiu um erro, marque como incorreta.</p>
+     <input type="text" id="rev-note" placeholder="Observação (opcional). Ex.: faltou filtrar por data; usou a coluna errada para o nome" aria-label="Observação da avaliação">
+     <p id="rev-msg" class="hint" aria-live="polite"></p>
+    </div>
    </div>
 
    <div class="card">
     <div class="card-head"><span>Perguntas recentes</span><button class="link" id="clear-hist" type="button">Limpar</button></div>
     <ul id="history"></ul>
+   </div>
+  </section>
+
+  <!-- Tela 3: controle das perguntas feitas a cada modelo (7B x 15B) e da acurácia -->
+  <section id="view-eval" class="view" hidden>
+   <div class="card">
+    <div class="card-head"><span>Acurácia por modelo</span><span class="meta" id="ev-total"></span></div>
+    <div class="card-body">
+     <p class="hint"><strong>Sintaxe correta</strong>: o Firebird aceitou o SQL gerado, conferido automaticamente logo após a geração e antes de qualquer edição. <strong>Semântica correta</strong>: você marcou que a resposta do modelo atende à pergunta (marcação feita depois da execução, ou abaixo). <strong>Erros</strong>: geração sem SQL utilizável (cortada, vazia ou "I do not know"), SQL recusado pelo banco ou falha na execução. Gerações interrompidas e falhas de ambiente (servidor, Ollama ou banco fora do ar) não são registradas.</p>
+     <ul class="legend" id="ev-legend"></ul>
+     <div id="ev-models"></div>
+    </div>
+   </div>
+
+   <div class="card">
+    <div class="card-head"><span>Perguntas registradas</span>
+     <div class="ev-tools">
+      <button class="btn" id="ev-export" type="button" title="Baixa todos os registros em CSV (separado por ponto e vírgula, abre no Excel).">Exportar CSV</button>
+      <button class="link" id="ev-clear" type="button">Limpar</button>
+     </div>
+    </div>
+    <div class="card-body">
+     <div class="ev-filters">
+      <div><label for="ev-model">Modelo</label><select id="ev-model"></select></div>
+      <div><label for="ev-cat">Situação</label><select id="ev-cat"></select></div>
+     </div>
+     <div class="table-wrap ev-wrap"><table id="ev-table"></table></div>
+     <p id="ev-empty" class="hint" hidden>Nenhuma pergunta registrada ainda. Gere SQL na tela Perguntar: cada geração entra aqui com o modelo usado.</p>
+    </div>
    </div>
   </section>
 
@@ -162,7 +217,19 @@
  </div>
 </dialog>
 
+<!-- Confirmação antes de interpretar: resumo do que vai ao modelo e do que será apagado -->
+<dialog id="dlg-ia">
+ <h2>Interpretar a seleção?</h2>
+ <div id="dlg-ia-body"></div>
+ <p class="hint">Os pesos do modelo não mudam: o resultado vira o contexto enviado ao SQLCoder em cada pergunta, depois da sua revisão.</p>
+ <div class="actions">
+  <button class="btn" id="dlg-ia-cancel" type="button">Cancelar</button>
+  <button class="primary" id="dlg-ia-ok" type="button">Interpretar</button>
+ </div>
+</dialog>
+
 <div id="toasts" role="status"></div>
+<div id="tip" role="tooltip" hidden></div>
 <script src="app.js"></script>
 </body>
 </html>

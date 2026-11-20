@@ -132,3 +132,67 @@ dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);bo
 dialog::backdrop{background:rgba(0,0,0,.55)}
 dialog h2{margin:0 0 10px;font-size:15px}
 dialog .actions{margin-top:16px}
+/* revisão semântica (logo após a execução) */
+#review{padding:12px 14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.rev-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.rev-head strong{font-size:13px}
+.rev-head small{display:block;color:var(--dim);font-size:12px;margin-top:2px}
+.rev-btns{display:flex;gap:8px;flex-shrink:0}
+.rev[aria-pressed=true][data-sem=ok]{border-color:var(--ok);color:var(--ok);background:rgba(52,211,153,.1)}
+.rev[aria-pressed=true][data-sem=erro]{border-color:var(--bad);color:var(--bad);background:rgba(251,113,133,.1)}
+#review .hint{margin:0}
+#rev-msg:empty{display:none}
+
+/* tela de avaliação dos modelos */
+.legend{list-style:none;margin:0 0 14px;padding:0;display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--mute)}
+.legend li{display:flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:3px;flex-shrink:0;display:inline-block}
+#ev-models{display:flex;flex-direction:column;gap:18px}
+.ev-model h3{margin:0 0 8px;font-size:13.5px;display:flex;justify-content:space-between;gap:10px}
+.ev-model h3 span{font-weight:400;color:var(--dim);font-size:12px}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}
+.tile{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+.tile small{display:block;color:var(--mute);font-size:11.5px}
+.tile b{font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
+.tile i{font-style:normal;color:var(--dim);font-size:11.5px;display:block}
+.bar{display:flex;gap:2px;height:22px;border-radius:4px;overflow:hidden;background:var(--bg)}
+.seg{min-width:3px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#fff;font-variant-numeric:tabular-nums;cursor:default}
+.seg.dark{color:#0b0b0b}
+.ev-none{color:var(--dim);font-size:12.5px;margin:0}
+#tip{position:fixed;z-index:60;pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 9px;font-size:12px;box-shadow:0 6px 18px rgba(0,0,0,.4);white-space:nowrap}
+.ev-tools{display:flex;align-items:center;gap:12px}
+.ev-filters{display:grid;grid-template-columns:repeat(2,minmax(0,220px));gap:12px;margin-bottom:12px}
+.ev-wrap{max-height:520px;border:1px solid var(--line);border-radius:8px}
+#ev-table{border-collapse:collapse;width:100%;font-size:12.5px}
+#ev-table th,#ev-table td{border-bottom:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
+#ev-table th{position:sticky;top:0;background:var(--panel);color:var(--mute);font-weight:600;white-space:nowrap;z-index:1}
+#ev-table td.nw{white-space:nowrap;color:var(--mute)}
+#ev-table details summary{cursor:pointer}
+#ev-table details code{display:block;white-space:pre-wrap;overflow-wrap:anywhere;color:#93c5fd;font-size:12px;margin-top:6px}
+#ev-table details p{margin:6px 0 0;color:var(--dim);font-size:12px}
+.st{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.sem-btns{display:flex;gap:4px}
+.sem-btns .btn{padding:2px 8px;font-size:12px}
+.mini{font-size:11.5px;color:var(--dim)}
+@media(max-width:767px){.tiles{grid-template-columns:repeat(2,1fr)}.ev-filters{grid-template-columns:1fr 1fr}}
+
+/* etapas do contexto: selecionar -> interpretar -> revisar */
+.steps{list-style:none;display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px;padding:0;counter-reset:none}
+.steps li{font-size:12px;color:var(--dim);border:1px solid var(--line);border-radius:14px;padding:3px 12px}
+.steps li.on{color:var(--text);border-color:var(--brand);background:rgba(59,130,246,.12)}
+/* durante a interpretação ("run") a lista já mostra as descrições chegando, mas sem os botões da revisão */
+#ctx-card:not([data-step=sel]) .only-sel,#ctx-card[data-step=sel] .only-rev,#ctx-card[data-step=run] .ia-bar .only-rev,#ctx-card:not([data-step=run]) .only-run{display:none!important}
+.interp-sel{display:flex;align-items:center;gap:8px}
+.interp-sel label{margin:0;white-space:nowrap}
+.interp-sel select{width:auto;max-width:330px;padding:6px 8px}
+.col-in{min-width:0}
+.cls{padding:5px 8px;font-size:12.5px}
+.cls-seguro{border-color:var(--ok)!important}
+.cls-sensivel{border-color:var(--bad)!important}
+select:disabled{opacity:.7;cursor:not-allowed}
+.ia.nd{color:var(--bad);border-color:var(--bad)}
+.ia.pd{color:var(--dim)}
+.tbl summary .ia{margin-left:8px;vertical-align:1px}
+dialog p.warn{color:#fbbf24}
+#dlg-ia{width:min(520px,calc(100vw - 40px))}
+.col-bulk>span{display:inline-flex;flex-wrap:wrap;gap:12px}
